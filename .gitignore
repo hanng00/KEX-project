@@ -1,2 +1,5 @@
 poetry.lock
 .venv
+*.log
+*.png
+logs
