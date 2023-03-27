@@ -9,7 +9,7 @@ This repo contains all experiments related to my Bachelor thesis which is focuse
 This project uses Poetry as its package manager. To install it, run
 
 ```bash
-$ poetry installl
+$ poetry install
 ```
 
 Make sure the notebooks are ran wihtin the virtual environment that Poetry creates.
