@@ -4,3 +4,4 @@ poetry.lock
 *.png
 logs
 poetry.lock
+*.pyc
