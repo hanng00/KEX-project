@@ -4,39 +4,34 @@ import nest
 class RandomNetwork:
     def __init__(self, J_E: float = 4.0, J_I: float = -51.0) -> None:
         nest.ResetKernel()
-        print("STARTING")
 
         self.N_total = 10_000
 
-        self.N_E = 8000
-        self.N_I = 2000  # Number of excitatory neurons
-        self.N_rec = 8000  # Number of neurons to record
+        self.N_E = int(self.N_total * (4 / 5))  # Number of excitatory neurons
+        self.N_I = int(self.N_total * (1 / 5))  # Number of excitatory neurons
+        self.N_rec = self.N_E  # Number of neurons to record
 
         self.synapse_model = "static_synapse"
         self.neuron_model = "iaf_cond_exp"
 
-        time_constant = 20  # ms
-        membrane_resistance = 100  # Mohm
-        C_m = time_constant / membrane_resistance * 1000  # pF
-
         self.neuron_params = {
-            "V_m": nest.random.uniform(min=-60.0, max=-55.0),
+            "V_m": -60.0,
             "E_L": -60.0,
             "V_th": -50.0,
             "V_reset": -60.0,
             "t_ref": 5.0,
             "E_ex": 0.0,
             "E_in": -80.0,
-            "C_m": 200.0,
+            "C_m": 100.0,
             "g_L": 10.0,
-            # "I_e": 20.0,
+            # "I_e": 200.0,
             "tau_syn_ex": 5.0,
             "tau_syn_in": 10.0,
         }
 
         # Synapse parameters
-        self.P_0 = 0.02  # Connection probability
-        self.delay = 2.0
+        self.P_0 = 0.01  # Connection probability
+        self.delay = 1.0
 
         self.J_E = J_E
         self.J_I = J_I
@@ -73,7 +68,7 @@ class RandomNetwork:
         self.nodes_E = self.nodes[: self.N_E]
         self.nodes_I = self.nodes[self.N_E :]
 
-        # nest.SetStatus(self.nodes, "V_m", -60.0)
+        nest.SetStatus(self.nodes, "V_m", -60.0)
 
         # Set up synapses
         exc_syn_dict = {

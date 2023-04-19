@@ -1,6 +1,5 @@
 import nest
 import numpy as np
-from typing import List
 
 
 class HMN_network:
@@ -22,8 +21,7 @@ class HMN_network:
         self.N_E = int(self.N_total * self.E_perc)  # Number of excitatory neurons
         self.N_I = int(self.N_total * (1 - self.E_perc))  # Number of excitatory neurons
 
-        self.exc_neuron_model = "iaf_cond_exp"
-        self.inh_neuron_model = self.exc_neuron_model
+        self.neuron_model = "iaf_cond_exp"
 
         self.neuron_params = {
             "V_m": nest.random.uniform(min=-60.0, max=-55.0),
@@ -35,13 +33,13 @@ class HMN_network:
             "E_in": -80.0,
             "C_m": 200.0,
             "g_L": 10.0,
-            "I_e": 10.0,
+            # "I_e": 20.0,
             "tau_syn_ex": 5.0,
             "tau_syn_in": 10.0,
         }
 
         # Synapse parameters
-        self.P_0 = 0.01  # Connection probability
+        self.P_0 = 0.015  # Connection probability
         self.within_delay = 2.0
         self.across_delay = 5.0
 
@@ -68,14 +66,6 @@ class HMN_network:
 
         nest.CopyModel(
             "static_synapse",
-            "input_synapse",
-            {
-                "weight": self.J_E,
-            },
-        )
-
-        nest.CopyModel(
-            "static_synapse",
             "inhibitory_synapse",
             {
                 "weight": self.J_I,
@@ -83,36 +73,24 @@ class HMN_network:
         )
 
     def build(self):
-        """self.nodes = nest.Create(
+        self.nodes = nest.Create(
             self.neuron_model, self.N_total, params=self.neuron_params
-        )"""
-        self.submodule_dict = self._generate_submodule_dict(
-            self.N_total, self.n_submodules, E_perc=self.E_perc
+        )
+        self.submodule_dict = self._generate_base_network(
+            self.nodes, self.n_submodules, E_perc=self.E_perc
         )
         self._connect_submodules(self.submodule_dict, self.P_0, self.R_ex, self.E_perc)
         print("Network fully built.")
 
-    def _add_background_noise(self, noise_config):
+    def _add_background_noise(self):
         noise_generator = nest.Create(
             "noise_generator",
             {
                 "mean": 0.0,
-                "std": 50.0,
-                "dt": 10,
-                "stop": noise_config["stop"],
+                "std": 200.0,
             },
         )
-        node_collections_E = self._get_exc_nodes(
-            self.submodule_dict, noise_config["module_ids"]
-        )
-        noise_conn_dict = {"rule": "pairwise_bernoulli", "p": noise_config["p"]}
-
-        for nodes in node_collections_E:
-            nest.Connect(
-                noise_generator,
-                nodes,
-                noise_conn_dict,
-            )
+        nest.Connect(noise_generator, self.nodes)
 
     def simulate(
         self,
@@ -121,9 +99,8 @@ class HMN_network:
         stimulate_module_ids,
         record_module_ids,
         stimulate_module_ratio,
-        noise_config,
     ):
-        self._add_background_noise(noise_config)
+        self._add_background_noise()
 
         noise = nest.Create(
             "poisson_generator",
@@ -131,29 +108,22 @@ class HMN_network:
             poisson_config,
         )
 
-        # self.vm = nest.Create("voltmeter")
-        # nest.Connect(self.vm, self.nodes)
+        self.vm = nest.Create("voltmeter")
 
-        nodes_stimulate_collection = self._get_exc_nodes(
-            self.submodule_dict, stimulate_module_ids
+        nodes_stimulate = self._get_exc_nodes(self.submodule_dict, stimulate_module_ids)
+
+        nest.Connect(
+            noise,
+            nodes_stimulate,
+            {"rule": "pairwise_bernoulli", "p": stimulate_module_ratio},
+            "excitatory_synapse",
         )
-
-        for nodes_stimulate in nodes_stimulate_collection:
-            nest.Connect(
-                noise,
-                nodes_stimulate,
-                {"rule": "pairwise_bernoulli", "p": stimulate_module_ratio},
-                "input_synapse",
-            )
 
         spikes = nest.Create("spike_recorder", 1, [{"label": "va-py-ex"}])
         self.spikes_E = spikes[:1]
-        nodes_record_collection = self._get_exc_nodes(
-            self.submodule_dict, record_module_ids
-        )
-
-        for nodes_record in nodes_record_collection:
-            nest.Connect(nodes_record, self.spikes_E)
+        nodes_record = self._get_exc_nodes(self.submodule_dict, record_module_ids)
+        nest.Connect(nodes_record, self.spikes_E)
+        nest.Connect(self.vm, self.nodes)
 
         nest.Simulate(simtime)
 
@@ -164,35 +134,25 @@ class HMN_network:
         N_E = int(self.E_perc * len(submodule))
         return submodule[:N_E]
 
-    def _get_exc_nodes(
-        self, submodule_dict, submodule_ids
-    ) -> List[nest.NodeCollection]:
-        node_collections = []
+    def _get_exc_nodes(self, submodule_dict, submodule_ids):
+        node_collection = nest.NodeCollection()
         for idx in submodule_ids:
             exc_nodes = self._get_exc_nodes_from_submodule(submodule_dict[idx])
+            node_collection += exc_nodes
 
-            node_collections.append(exc_nodes)
+        return node_collection
 
-        return node_collections
-
-    def _generate_submodule_dict(self, N_total, n_modules, E_perc):
-        len_submodule = int(N_total // n_modules)
+    def _generate_base_network(self, nodes, n_modules, E_perc):
+        n_of_nodes = len(nodes)
+        len_submodule = int(n_of_nodes // n_modules)
         print(
-            f"Generating submodules of size {len_submodule}, total network size {N_total}"
+            f"Generating submodules of size {len_submodule}, total network size {n_of_nodes}"
         )
 
         submodule_dict = {}
-        for submodule_idx, node_idx in enumerate(range(0, N_total, len_submodule)):
-            n_exc_nodes = int(len_submodule * E_perc)
-            exc_nodes = nest.Create(
-                self.exc_neuron_model, n_exc_nodes, params=self.neuron_params
-            )
-            inh_nodes = nest.Create(
-                self.inh_neuron_model,
-                len_submodule - n_exc_nodes,
-                params=self.neuron_params,
-            )
-            submodule_dict[submodule_idx + 1] = exc_nodes + inh_nodes
+        for submodule_idx, node_idx in enumerate(range(0, n_of_nodes, len_submodule)):
+            submodule = nodes[node_idx : node_idx + len_submodule]
+            submodule_dict[submodule_idx + 1] = submodule
 
         print("Base network configured")
 
@@ -200,11 +160,9 @@ class HMN_network:
 
     def _get_local_connection_density(self, P_0, R_ex, neuron_type):
         if neuron_type == "excitatory":
-            return (P_0) * (1 + R_ex) ** 4
+            return (0.8 * P_0) * (1 + R_ex) ** 4
         elif neuron_type == "inhibitory":
-            # return 0.2 * P_0 * 2**4 + 0.05
-            return P_0 * 2**4
-
+            return 0.2 * P_0 * 2**4
         else:
             raise (f"{neuron_type} is not a valid neuron")
 
@@ -264,7 +222,7 @@ class HMN_network:
         if exc_connection_density > 0:
             exc_conn_dict = {"rule": "pairwise_bernoulli", "p": exc_connection_density}
             nest.Connect(
-                source_nodes_E,
+                source_nodes,
                 target_nodes,
                 syn_spec={
                     "synapse_model": "excitatory_synapse",
@@ -278,7 +236,7 @@ class HMN_network:
                 "p": inh_connection_density,
             }
             nest.Connect(
-                source_nodes_I,
+                source_nodes,
                 target_nodes,
                 syn_spec={
                     "synapse_model": "inhibitory_synapse",
