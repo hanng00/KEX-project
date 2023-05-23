@@ -11,6 +11,15 @@ sorn = {extras = ["all"], version = "^0.7.4"}
 tqdm = "^4.65.0"
 SciencePlots = "^2.0.1"
 seaborn = "^0.12.2"
+plotly = "^5.14.1"
+nbformat = "^5.8.0"
+PyQt5 = "^5.15.9"
+fastparquet = "^2023.2.0"
+scikit-learn = "^1.2.2"
+sklearn = "^0.0.post4"
+statsmodels = "^0.13.5"
+powerlaw = "^1.5"
+lxml = "^4.9.2"
 
 [tool.poetry.dev-dependencies]
 

@@ -5,3 +5,5 @@ poetry.lock
 logs
 poetry.lock
 *.pyc
+data
+*.parquet

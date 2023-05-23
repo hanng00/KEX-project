@@ -4,7 +4,6 @@ from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from typing import List
-import powerlaw
 
 
 def plot_silent_period_distribution(spike_events):
@@ -24,19 +23,18 @@ def func_powerlaw(x, c, m):
     return c * x ** (-m)
 
 
-def get_silent_time_distribution(
-    df_spike_events: List[pd.DataFrame], silent_threshold=0.2
-):
+def get_silent_time_distribution(df_spike_events: List[pd.DataFrame]):
     parsed_spike_events = []
     for df_spike_event in df_spike_events:
         df_spike_event = df_spike_event.sort_values("times").reset_index(drop=True)
+        df_spike_event["times"] = df_spike_event["times"]
 
         df_silent_time = (
             df_spike_event.assign(
                 silent_time=df_spike_event["times"]
                 - df_spike_event["times"].shift(periods=1)
             )
-            .query("silent_time >= @silent_threshold and silent_time < 100.0")
+            .query("silent_time >= 0.1 and silent_time < 50")
             .silent_time.round(4)
             .value_counts()
             .to_frame()
@@ -58,7 +56,7 @@ def get_silent_time_distribution(
 def get_avalanche_size_distribution(
     df_spike_events: List[pd.DataFrame], silent_threshold=0.2
 ):
-    allowed_deltas = [delta / 10 for delta in range(int(silent_threshold * 10 + 1))]
+    allowed_deltas = np.arange(0, silent_threshold + 0.1, 0.1)
 
     parsed_spike_events = []
     for df_spike_event in df_spike_events:
@@ -101,7 +99,7 @@ def get_avalanche_size_distribution(
 def get_avalanche_duration_distribution(
     df_spike_events: List[pd.DataFrame], silent_threshold=0.2
 ):
-    allowed_deltas = [delta / 10 for delta in range(int(silent_threshold * 10 + 1))]
+    allowed_deltas = np.arange(0, silent_threshold + 0.1, 0.1)
 
     parsed_spike_events = []
     for df_spike_event in df_spike_events:
@@ -151,12 +149,12 @@ def fit_avalanche_sizes_to_power_distribution(
     df_spike_events: List[pd.DataFrame],
     silent_threshold,
     plot=False,
-    verbose=False,
+    verbose=True,
     return_error=False,
 ):
     df_avalanche_sizes = get_avalanche_size_distribution(
         df_spike_events, silent_threshold
-    )  # .pipe(remove_truncated_values)
+    ).pipe(remove_truncated_values)
 
     X = df_avalanche_sizes.index
     y = df_avalanche_sizes["avalanche_sizes"]
@@ -186,21 +184,19 @@ def fit_avalanche_sizes_to_power_distribution(
         )
         print(f"Parameter error: {perr}")
     if return_error:
-        return (popt[1], perr[1])
-
+        return [(p, err) for p, err in zip(popt, perr)]
     return popt[:2]
 
 
 def fit_silent_period_to_power_distribution(
     df_spike_events,
-    silent_threshold=0.2,
     plot=False,
-    verbose=False,
+    verbose=True,
     return_error=False,
 ):
-    df_silent_time = get_silent_time_distribution(
-        df_spike_events, silent_threshold=silent_threshold
-    )  # .pipe(remove_truncated_values)
+    df_silent_time = get_silent_time_distribution(df_spike_events).pipe(
+        remove_truncated_values
+    )
 
     X = df_silent_time.index
     y = df_silent_time["silent_time"]
@@ -221,9 +217,7 @@ def fit_silent_period_to_power_distribution(
         ax.set_ylim(10**-5, 1)
         ax.set_xlabel("Silent Periods [ms]", fontsize=14)
         ax.set_ylabel("Normalized Frequency", fontsize=14)
-        # ax.plot(X, func_powerlaw(X, *popt))
-        ax.plot(X, func_powerlaw(X, 0.01, 1.21))
-        ax.plot(X, func_powerlaw(X, 0.01, 1.55))
+        ax.plot(X, func_powerlaw(X, *popt))
 
     if verbose:
         print("Function to fit: c * x ** (-m)")
@@ -234,7 +228,7 @@ def fit_silent_period_to_power_distribution(
         print(f"Parameter error: {perr}")
 
     if return_error:
-        return (popt[1], perr[1])
+        return [(p, err) for p, err in zip(popt, perr)]
     return popt[:2]
 
 
@@ -242,12 +236,12 @@ def fit_avalanche_duration_to_power_distribution(
     df_spike_events,
     silent_threshold,
     plot=False,
-    verbose=False,
+    verbose=True,
     return_error=False,
 ):
     df_avalanche_duration = get_avalanche_duration_distribution(
         df_spike_events, silent_threshold
-    )  # .pipe(remove_truncated_values)
+    ).pipe(remove_truncated_values)
     X = df_avalanche_duration.index
     y = df_avalanche_duration["avalanche_durations"]
 
@@ -277,8 +271,7 @@ def fit_avalanche_duration_to_power_distribution(
         print(f"Parameter error: {perr}")
 
     if return_error:
-        return (popt[1], perr[1])
-
+        return [(p, err) for p, err in zip(popt, perr)]
     return popt[:2]
 
 

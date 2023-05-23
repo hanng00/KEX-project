@@ -4,8 +4,8 @@ from .hmn_network import HMN_network
 
 
 class HMNDepressive(HMN_network):
-    def __init__(self, J_E=0.8, J_I=-0.8, verbose=False) -> None:
-        super().__init__(J_E, J_I, verbose)
+    def __init__(self, J_E=0.8, J_I=-0.8, t_ref=0.5, verbose=False) -> None:
+        super().__init__(J_E, J_I, t_ref, verbose)
 
     def _setup_synapses(self):
         print("Using depressing synapses.")
@@ -22,12 +22,12 @@ class HMNDepressive(HMN_network):
         
         """
 
-        Tau_rec = 800.0  # recovery time
+        Tau_rec = 20.0  # recovery time
         Tau_fac = 0.0  # facilitation time
         U = 0.5  # facilitation parameter U
         A = 250.0  # PSC weight in pA
-        u = 0.0
-        x = 1
+        u = 0.5
+        x = 10
 
         nest.CopyModel(
             "static_synapse",

@@ -1,10 +1,13 @@
 import nest
 import numpy as np
 from typing import List
+import seaborn as sns
+from matplotlib.colors import LogNorm
+import pandas as pd
 
 
 class HMN_network:
-    def __init__(self, J_E=0.8, J_I=-0.8, verbose=False) -> None:
+    def __init__(self, J_E=0.8, J_I=-0.8, t_ref=5.0, verbose=False) -> None:
         nest.ResetKernel()
         n = 4  # number of threads'
         self.dt = 0.1
@@ -30,7 +33,7 @@ class HMN_network:
             "E_L": -60.0,
             "V_th": -50.0,
             "V_reset": -60.0,
-            "t_ref": 5.0,
+            "t_ref": t_ref,
             "E_ex": 0.0,
             "E_in": -80.0,
             "C_m": 200.0,
@@ -99,15 +102,16 @@ class HMN_network:
                 "mean": 0.0,
                 "std": 50.0,
                 "dt": 10,
-                "stop": noise_config["stop"],
+                "stop": noise_config.get("stop", 10_000),
             },
         )
         node_collections_E = self._get_exc_nodes(
             self.submodule_dict, noise_config["module_ids"]
         )
+
         noise_conn_dict = {"rule": "pairwise_bernoulli", "p": noise_config["p"]}
 
-        for nodes in node_collections_E:
+        for nodes in self.submodule_dict.values():
             nest.Connect(
                 noise_generator,
                 nodes,
@@ -325,3 +329,34 @@ class HMN_network:
                     print(
                         f"- Connected to target: {target_idx}, exc_dens: {exc_connection_density}, inh_dens: {inh_connection_density}"
                     )
+
+    def _generate_connection_density(self, submodule_dict):
+        connection_density = {i: [] for i, _ in submodule_dict.items()}
+
+        for source_idx, source_nodes in submodule_dict.items():
+            print("Source node:", source_idx)
+            for target_idx, target_nodes in submodule_dict.items():
+                if source_idx > target_idx:
+                    continue
+                print(target_idx, end=" ")
+
+                n_connections = len(nest.GetConnections(source_nodes, target_nodes))
+                n_connections_possible = len(source_nodes) * len(target_nodes)
+                connection_density[source_idx] += [
+                    n_connections / n_connections_possible
+                ]
+                if source_idx != target_idx:
+                    connection_density[target_idx] += [
+                        n_connections / n_connections_possible
+                    ]
+
+        return pd.DataFrame(connection_density).iloc[::-1]
+
+    def plot_connection_density(self):
+        connection_density = self._generate_connection_density(self.submodule_dict)
+        sns.heatmap(
+            connection_density,
+            norm=LogNorm(vmin=10**-5, vmax=2 * 10**-1),
+            cmap="gray",
+        )
+        return connection_density

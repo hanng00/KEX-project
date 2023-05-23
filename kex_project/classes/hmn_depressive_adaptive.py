@@ -7,5 +7,5 @@ from .hmn_depressive import HMNDepressive
 
 
 class HMNDepressiveAdaptive(HMNAdaptive, HMNDepressive):
-    def __init__(self, J_E=0.8, J_I=-0.8, verbose=False) -> None:
-        super().__init__(J_E, J_I, verbose)
+    def __init__(self, J_E=0.8, J_I=-0.8, t_ref=0.5, verbose=False) -> None:
+        super().__init__(J_E, J_I, t_ref, verbose)

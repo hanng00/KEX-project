@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from typing import List
 import powerlaw
+from functools import partial
 
 
 def plot_silent_period_distribution(spike_events):
@@ -36,7 +37,7 @@ def get_silent_time_distribution(
                 silent_time=df_spike_event["times"]
                 - df_spike_event["times"].shift(periods=1)
             )
-            .query("silent_time >= @silent_threshold and silent_time < 100.0")
+            .query("silent_time >= @silent_threshold")
             .silent_time.round(4)
             .value_counts()
             .to_frame()
@@ -51,7 +52,6 @@ def get_silent_time_distribution(
     silent_time_distribution = summed_silent_time_frequencies.divide(
         summed_silent_time_frequencies.sum()
     ).sort_index()
-    # .sort_values("silent_time", ascending=False)
     return silent_time_distribution
 
 
@@ -96,6 +96,8 @@ def get_avalanche_size_distribution(
     # .sort_values("avalanche_sizes", ascending=False)
 
     return avalanche_size_distribution
+
+    return summed_avalanche_frequencies
 
 
 def get_avalanche_duration_distribution(
@@ -142,7 +144,6 @@ def get_avalanche_duration_distribution(
     avalanche_duration_distribution = summed_avalanche_duration_freq.divide(
         summed_avalanche_duration_freq.sum()
     )
-    # .sort_values("avalanche_durations", ascending=False)
 
     return avalanche_duration_distribution
 
@@ -151,66 +152,85 @@ def fit_avalanche_sizes_to_power_distribution(
     df_spike_events: List[pd.DataFrame],
     silent_threshold,
     plot=False,
-    verbose=False,
     return_error=False,
 ):
     df_avalanche_sizes = get_avalanche_size_distribution(
         df_spike_events, silent_threshold
-    )  # .pipe(remove_truncated_values)
+    )
 
     X = df_avalanche_sizes.index
     y = df_avalanche_sizes["avalanche_sizes"]
+    data = y.to_numpy()
 
-    popt, pcov = curve_fit(func_powerlaw, X, y)
-    perr = np.sqrt(np.diag(pcov))
-    popt = np.round(popt, 2)
+    fit = powerlaw.Fit(data, verbose=False)
+    exp = fit.power_law.alpha
+    error = fit.power_law.sigma
+
+    popt, _ = curve_fit(func_powerlaw, X, y)
+    popt_get_c, _ = curve_fit(partial(func_powerlaw, m=exp), X, y)
+    powerlaw_C = popt_get_c[0]
+    # print("RMSE", np.sqrt(np.mean(np.power(func_powerlaw(X, powerlaw_C, exp) - y, 2))))
 
     if plot:
-        ax = df_avalanche_sizes.reset_index().plot(
+        ax = df_avalanche_sizes.reset_index().plot(  # .divide(df_avalanche_sizes.sum())
             logx=True,
             logy=True,
             kind="scatter",
             x="index",
             y="avalanche_sizes",
-            s=5.0,
+            s=4.0,
         )
-        ax.set_ylim(10**-4, 1)
+        ax.plot(X, func_powerlaw(X, powerlaw_C, exp), "c", label="powerlaw", lw=2.0)
+        ax.set_ylim(bottom=10**-5)
+
+        ax.plot(
+            X,
+            func_powerlaw(
+                X,
+                *popt,
+            ),
+            "r-.",
+            label="curve_fit",
+            lw=2.0,
+        )
+        ax.legend(fontsize=12)
+
         ax.set_xlabel("Avalanche sizes", fontsize=14)
         ax.set_ylabel("Normalized Frequency", fontsize=14)
-        ax.plot(X, func_powerlaw(X, *popt))
 
-    if verbose:
-        print("Function to fit: c * x ** (-m)")
-        print(
-            f"Curve fit: c={popt[0]} +- {round(perr[0], 3)}, m={popt[1]} +- {round(perr[1], 3)}"
-        )
-        print(f"Parameter error: {perr}")
     if return_error:
-        return (popt[1], perr[1])
+        return (exp, error)
 
-    return popt[:2]
+    return exp
 
 
 def fit_silent_period_to_power_distribution(
     df_spike_events,
     silent_threshold=0.2,
     plot=False,
-    verbose=False,
     return_error=False,
 ):
     df_silent_time = get_silent_time_distribution(
         df_spike_events, silent_threshold=silent_threshold
-    )  # .pipe(remove_truncated_values)
+    )
 
     X = df_silent_time.index
     y = df_silent_time["silent_time"]
 
-    popt, pcov = curve_fit(func_powerlaw, X, y)
-    perr = np.sqrt(np.diag(pcov))
-    popt = np.round(popt, 2)
+    data = y.to_numpy()
+
+    fit = powerlaw.Fit(data, verbose=False)
+    exp = fit.power_law.alpha
+    error = fit.power_law.sigma
+
+    popt, _ = curve_fit(func_powerlaw, X, y)
+    popt_get_c, _ = curve_fit(partial(func_powerlaw, m=exp), X, y)
+
+    powerlaw_C = popt_get_c[0]
+    # print("RMSE", np.sqrt(np.mean(np.power(func_powerlaw(X, powerlaw_C, exp) - y, 2))))
 
     if plot:
-        ax = df_silent_time.reset_index().plot(
+        ax = df_silent_time.reset_index().plot(  # .divide(df_avalanche_sizes.sum())
             logx=True,
             logy=True,
             kind="scatter",
@@ -218,45 +238,56 @@ def fit_silent_period_to_power_distribution(
             y="silent_time",
             s=4.0,
         )
-        ax.set_ylim(10**-5, 1)
+
+        ax.plot(X, func_powerlaw(X, powerlaw_C, exp), "c", label="powerlaw", lw=2.0)
+        ax.set_ylim(bottom=10**-5)
+        ax.plot(
+            X,
+            func_powerlaw(
+                X,
+                *popt,
+            ),
+            "r-.",
+            label="curve_fit",
+            lw=2.0,
+        )
+        ax.legend(fontsize=12)
+
         ax.set_xlabel("Silent Periods [ms]", fontsize=14)
         ax.set_ylabel("Normalized Frequency", fontsize=14)
-        # ax.plot(X, func_powerlaw(X, *popt))
-        ax.plot(X, func_powerlaw(X, 0.01, 1.21))
-        ax.plot(X, func_powerlaw(X, 0.01, 1.55))
-
-    if verbose:
-        print("Function to fit: c * x ** (-m)")
-
-        print(
-            f"Curve fit: c={popt[0]} +- {round(perr[0], 3)}, m={popt[1]} +- {round(perr[1], 3)}"
-        )
-        print(f"Parameter error: {perr}")
 
     if return_error:
-        return (popt[1], perr[1])
-    return popt[:2]
+        return (exp, error)
+
+    return exp
 
 
 def fit_avalanche_duration_to_power_distribution(
     df_spike_events,
     silent_threshold,
     plot=False,
-    verbose=False,
     return_error=False,
 ):
     df_avalanche_duration = get_avalanche_duration_distribution(
         df_spike_events, silent_threshold
-    )  # .pipe(remove_truncated_values)
+    )
+
     X = df_avalanche_duration.index
     y = df_avalanche_duration["avalanche_durations"]
+    data = y.to_numpy()
 
-    popt, pcov = curve_fit(func_powerlaw, X, y)
-    perr = np.sqrt(np.diag(pcov))
-    popt = np.round(popt, 2)
+    fit = powerlaw.Fit(data, verbose=False)
+    exp = fit.power_law.alpha
+    error = fit.power_law.sigma
+
+    popt, _ = curve_fit(func_powerlaw, X, y)
+    popt_get_c, _ = curve_fit(partial(func_powerlaw, m=exp), X, y)
+
+    powerlaw_C = popt_get_c[0]
+    # print("RMSE", np.sqrt(np.mean(np.power(func_powerlaw(X, powerlaw_C, exp) - y, 2))))
 
     if plot:
-        ax = df_avalanche_duration.reset_index().plot(
+        ax = df_avalanche_duration.reset_index().plot(  # .divide(df_avalanche_sizes.sum())
             logx=True,
             logy=True,
             kind="scatter",
@@ -264,22 +295,28 @@ def fit_avalanche_duration_to_power_distribution(
             y="avalanche_durations",
             s=4.0,
         )
-        ax.set_ylim(10**-4, 1)
+        ax.plot(X, func_powerlaw(X, powerlaw_C, exp), "c", label="powerlaw", lw=2.0)
+        ax.set_ylim(bottom=10**-5)
+
+        ax.plot(
+            X,
+            func_powerlaw(
+                X,
+                *popt,
+            ),
+            "r-.",
+            label="curve_fit",
+            lw=2.0,
+        )
+        ax.legend(fontsize=12)
+
         ax.set_xlabel("Avalanche durations [ms]", fontsize=14)
         ax.set_ylabel("Normalized Frequency", fontsize=14)
-        ax.plot(X, func_powerlaw(X, *popt))
-
-    if verbose:
-        print("Function to fit: c * x ** (-m)")
-        print(
-            f"Curve fit: c={popt[0]} +- {round(perr[0], 3)}, m={popt[1]} +- {round(perr[1], 3)}"
-        )
-        print(f"Parameter error: {perr}")
 
     if return_error:
-        return (popt[1], perr[1])
+        return (exp, error)
 
-    return popt[:2]
+    return exp
 
 
 def plot_avalanche_sizes_distribution(spike_events):
@@ -314,3 +351,23 @@ def compute_gamma(m_duration, m_size, includes_errors):
 def remove_truncated_values(distribution: pd.DataFrame):
     first_occurence_idx = distribution.idxmin()[0]
     return distribution.loc[:first_occurence_idx]
+
+
+def fill_in_missing_indexes(distribution, value_name):
+    min_index = distribution.index.min()
+    max_index = distribution.index.max()
+
+    full_range_index = [
+        idx / 10 for idx in range(int(min_index * 10), int(max_index * 10) + 1)
+    ]
+    df_empty_index = pd.DataFrame(
+        np.zeros(len(full_range_index)), columns=["zeros"], index=full_range_index
+    )
+    df_merged_data = df_empty_index.merge(
+        distribution, how="left", left_index=True, right_index=True
+    ).fillna(0.0)
+    df_merged_data[value_name] = df_merged_data[value_name] + df_merged_data["zeros"]
+    df_filled_in_indexes = df_merged_data.drop(columns=["zeros"])
+    assert distribution[value_name].sum() == df_filled_in_indexes[value_name].sum()
+
+    return df_filled_in_indexes
